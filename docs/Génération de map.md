@@ -67,8 +67,8 @@ L'initialisation sert :
 SEED = ukn_timestamp_millis()
 RANDOM = ukn_create_random(SEED)
 
-perlin_terrain = Perlin(create_permutation_table(RANDOM))
-perlin_forest = Perlin(create_permutation_table(RANDOM))
+perlin_terrain = Perlin::init(create_permutation_table(RANDOM))
+perlin_forest = Perlin::init(create_permutation_table(RANDOM))
 
 map = Map::create(&perlin_terrain, &perlin_forest);
 
@@ -77,6 +77,7 @@ fn create_permutation_table(random) {
   for (i = table.length - 1; i > 0; i--) {
     ukn_swap(table[i], table[random.rand() * (i - 1)])
   }
+  return table
 }
 ```
 
@@ -112,27 +113,44 @@ struct Chunk {
     load_state = State.Init
 
     foreach(x, y) :
-      perlin_terrain.get(x_chunk, y_chunk, x, y)
-      perlin_foret(x_chunk, y_chunk, x, y)
+      perlin_terrain.get(x, y)
+      perlin_foret(x, y)
   }
   
   // ...
 } 
-
-
 ```
 
 ```
 struct Perlin {
-  fn init () {
+  static VECTOR_TABLE : [...]  //table de concordance entre les entrées de la table de permutation avec un vecteur unique de norme 1 (tous les vecteurs formant un cercle exact), abrégé "VT"
 
+  permutation_table  // [], abrégé "PT"
+
+  fn init (permutation_table) {
+    self.permutation_table = permutation_table
   }
 
-  fn get () {
+  fn get(x, y) {
+    // gestion des octaves avec la fréquence, etc ->
+      //
 
+    foreach
+      noise(x, y)
   } 
-}
 
+  fn noise(x, y) {
+    // Récupération des sommets autour du point -> (xy1, xy2, xy3, xy4)
+    // Récupération des vecteurs gradients associés -> (vg1, vg2, vg3, vg4)
+      vg1 = VT[PT[(PT[x1]+y1)&255]]
+    // Création des vecteurs entre les sommets et le point (x,y) -> (vs1, vs2, vs3, vs4)
+    // Création des produits scalaires entre les vecteurs gradients et les vecteurs sommet-point (ps1, ps2, ps3, ps4)
+    // Interpolation smooth du point (x,y) ->
+    // Interpolation linéaire horizontale puis verticale des produits scalaires et du point -> noise
+
+    return noise;
+  }
+}
 ```
 
 ### Chunk
@@ -163,7 +181,6 @@ struct Map {
     return chunk.get(x, y)
   }
 }
-
 ```
 
 ```
@@ -191,5 +208,4 @@ struct Chunk {
     return tiles[x, y]
   }
 } 
-
 ```
