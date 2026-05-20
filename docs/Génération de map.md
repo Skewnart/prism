@@ -32,7 +32,7 @@ Ainsi, avec ce système de chunk (micro parties locales) même si les cases ne s
 ### Ordre
 
 Pour générer le terrain de façon cohérente, l'ordre suivant est adopté pour chacun des chunks et chacune des cases :<br/>
-(Chunk de 8 x 8 unités de Perlin x / y (8 cases par unité x / y) donc 64 x 64 cases finales par chunk)
+(Chunk de 2 x 2 unités de Perlin x / y (16 cases par unité x / y) donc 32 x 32 cases finales par chunk)
 
 - (par case, seed random global) Perlin Noise pour l'altitude de la case<br/>
  Fonction de lissage pour les altitudes :
@@ -56,20 +56,21 @@ La génération de découpe en deux grandes parties :
 L'initialisation sert :
 - d'une part à générer toutes les constantes utiles à tout le terrain (seed globale, tables de permutation pour les deux utilisations de Perlin Noise)
 - d'autre part à générer les premières parties des 25 chunks autour du point de départ pour établir de façon déterministe la localisation des lieux uniques du terrain avec la seed globale.<br/>
-  Pour ce faire, seule l'utilisation de Perlin Noise pour l'altitude (première étape) est nécessaire. Le reste de la génération se fera au moment voulu (partie deux)
+  Pour ce faire, seule l'utilisation de Perlin Noise pour l'altitude (première étape) est nécessaire. Le reste de la génération se fera au moment voulu (partie deux)<br/>
+  C'est pour cela que l'initialisation d'un chunk se fait en deux parties (`init()` et `end_init()`)
 
 ```
 // Les méthodes préfixées par "ukn" sont des méthodes inconnues dont on assumera leur bon fonctionnement. Leur utilité étant suggérée par leur nom.
 
 // Start
 
-CHUNK = []
 SEED = ukn_timestamp_millis()
 RANDOM = ukn_create_random(SEED)
 
 perlin_terrain = Perlin(create_permutation_table(RANDOM))
 perlin_forest = Perlin(create_permutation_table(RANDOM))
 
+map = Map::create(&perlin_terrain, &perlin_forest);
 
 fn create_permutation_table(random) {
   table = (0..255).ukn_to_array()           // [0, 1, 2, 3 ... 254, 255]
@@ -77,25 +78,118 @@ fn create_permutation_table(random) {
     ukn_swap(table[i], table[random.rand() * (i - 1)])
   }
 }
+```
 
+```
 struct Map {
-// chunk [] btreemap
-// get_x_y() 
-}
+  chunks []  // btreemap
 
+  fn create(perlin_terrain, perlin_forest) {
+    // génération des 25 cases autour du joueur
+    foreach (x_chunk, y_chunk) :
+      chunks.add(Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest))
+    
+    //listage des lieux uniques possibles
+    //Choix des lieux
+    chunk.ukn_set_unique_area()
+  }
+  
+  // ...
+}
+```
+
+```
 struct Chunk {
-// tiles [] btreemap 
-// get_x_y()
-// generate(preload_only:bool))
+  tiles []   // btreemap
+  load_state // enum 
+  
+  // ...
+
+  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest) {
+    
+    // ...
+
+    load_state = State.Init
+
+    foreach(x, y) :
+      perlin_terrain.get(x_chunk, y_chunk, x, y)
+      perlin_foret(x_chunk, y_chunk, x, y)
+  }
+  
+  // ...
 } 
 
+
+```
+
+```
+struct Perlin {
+  fn init () {
+
+  }
+
+  fn get () {
+
+  } 
+}
 
 ```
 
 ### Chunk
 À chaque fois que l'utilisateur se déplace et lorsqu'un chunk non généré doit apparaître, il doit être généré de façon déterministe.<br/>
 Il aura donc attribué une seed en fonction de sa position.
-Ensuite, l'ordre de génération du chunk est déroulé.
+Ensuite, l'ordre de génération du chunk est déroulé.<br/>
+A ce moment-là, les deux fonctions d'init pour un chunk sont lancées.
 
-####CODE
+```
+struct Map {
 
+  // ...
+  
+  fn get(x, y) {
+    (x_chunk, y_chunk) = Chunk::convert_position(x, y)
+    chunk = chunks.try_get(x_chunk, y_chunk)
+    if !(chunk exists) {
+      chunk = Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest)
+      chunk.end_init()
+      chunks.add(chunk)
+    }
+    else {
+      if (chunk.state = State.Init) {
+        chunk.end_init()
+      }
+    }
+
+    return chunk.get(x, y)
+  }
+}
+
+```
+
+```
+struct Chunk {
+  // ...
+  random    // Random
+
+  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest) {
+    SEED = ukn_create_seed(x_chunk, y_chunk)
+    random = ukn_create_random(SEED)
+
+    // ...
+  }
+
+  fn end_init() {
+    load_state = State.EndInit
+
+    Poisson::solo_tree(random)
+    Poisson::solo_minerai(random)
+    foreach(x, y) :
+      WFC
+  }
+
+  fn get(x, y) {
+    return tiles[x, y]
+  }
+} 
+
+```
