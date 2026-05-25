@@ -67,15 +67,17 @@ L'initialisation sert :
 SEED = ukn_timestamp_millis()
 RANDOM = ukn_create_random(SEED)
 
-perlin_terrain = Perlin::init(create_permutation_table(RANDOM))
-perlin_forest = Perlin::init(create_permutation_table(RANDOM))
+perlin_terrain = Perlin::init(create_permutation_table_1024(RANDOM))
+perlin_forest = Perlin::init(create_permutation_table_1024(RANDOM))
+permutation_table_seed = create_permutation_table_1024(RANDOM)
 
-map = Map::create(&perlin_terrain, &perlin_forest);
+map = Map::create(&perlin_terrain, &perlin_forest, &permutation_table_seed);
 
-fn create_permutation_table(random) {
-  table = (0..255).ukn_to_array()           // [0, 1, 2, 3 ... 254, 255]
+// Crée une table de permutation de taille 1024
+fn create_permutation_table_1024(random) {  // Fisher-yates (je savais pas que cet algo avait un nom omg)
+  table = (0..1024).ukn_to_array()   [0, 1, 2 ... 1022, 1023]        
   for (i = table.length - 1; i > 0; i--) {
-    ukn_swap(table[i], table[random.rand() * (i - 1)])
+    ukn_swap(table, i, random.rand() * i)
   }
   return table
 }
@@ -85,10 +87,10 @@ fn create_permutation_table(random) {
 struct Map {
   chunks []  // btreemap
 
-  fn create(perlin_terrain, perlin_forest) {
+  fn create(perlin_terrain, perlin_forest, permutation_table_seed) {
     // génération des 25 cases autour du joueur
     foreach (x_chunk, y_chunk) :
-      chunks.add(Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest))
+      chunks.add(Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed))
     
     //listage des lieux uniques possibles
     //Choix des lieux
@@ -106,15 +108,21 @@ struct Chunk {
   
   // ...
 
-  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest) {
+  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed) {
     
     // ...
 
     load_state = State.Init
 
     foreach(x, y) :
+      // Pour un chunk en (3, 5), le point (x, y) qui à l'intérieur du chunk en (14, 27)
+      // Un chunk de 32 x 32 et 2 unités de perlin par chunk pour rappel
+      // Pour Perlin, le point à calculer sera en (3 x 2 + 14 / (32 / 2), 5 x 2 + 27 / (32 / 2))
+      //     = ((3 + 14 / 32) x 2, (5 + 27 / 32) x 2)
+      //     = (6,875, 11,6875)
+
       perlin_terrain.get(x, y)
-      perlin_foret(x, y)
+      perlin_forest(x, y)
   }
   
   // ...
@@ -132,21 +140,49 @@ struct Perlin {
   }
 
   fn get(x, y) {
-    // gestion des octaves avec la fréquence, etc ->
-      //
+    // gestion des octaves de perlin avec la fréquence et l'amplitude
+    // Pour rappel : Octave, somme de bruits à différentes échelles pour donner du détail
+    //  fréquence : Offset, donne du détail. Zoom du bruit. Variable
+    //  amplitude : Poids d'une couche. Variable
+    //  persistance : Evolution de l'amplitude entre les couches. Constant (classique : 0.5)
+    //  lacunarité : Evolution de la fréquence entre les couches. Constant (classique : 2)
 
-    foreach
-      noise(x, y)
+    frequence = 0.005
+    amplitude = 1
+
+    noise_result = 0
+    foreach (i in 0..5) {
+      noise_result += noise(x * frequence, y * frequence) * amplitude
+
+      frequence *= lacunarité
+      amplitude *= persistance
+    }
+    return noise_result
   } 
 
   fn noise(x, y) {
-    // Récupération des sommets autour du point -> (xy1, xy2, xy3, xy4)
+    // Récupération des sommets (nombres entiers) autour du point -> (xy1, xy2, xy3, xy4)
+      x1 = (u32)(x), x2 = x1+1
+      y1 = (u32)(y), y2 = y1+1
+      xy1 = point(x1, y1), xy2 = point(x2, y1), xy3 = point(x1, y2), xy4 = point(x2, y2)
     // Récupération des vecteurs gradients associés -> (vg1, vg2, vg3, vg4)
-      vg1 = VT[PT[(PT[x1]+y1)&255]]
+      vg1 = VT[PT[(PT[xy1.x&1023]+xy1.y)&1023] / 4]    //"/ 4" car on passe de 0..1024 à 0..256 pour la table de vecteurs
+      ...
     // Création des vecteurs entre les sommets et le point (x,y) -> (vs1, vs2, vs3, vs4)
+      vs1 = vecteur(x - xy1.x, y - xy1.y)
+      ...
     // Création des produits scalaires entre les vecteurs gradients et les vecteurs sommet-point (ps1, ps2, ps3, ps4)
-    // Interpolation smooth du point (x,y) ->
-    // Interpolation linéaire horizontale puis verticale des produits scalaires et du point -> noise
+      ps1 = vg1.x * vs1.x + vg1.y * vs1.y     // À y penser il faut vérifier les résultats avec des exemples vu que le vecteur gradient n'a pas la même échelle que les vecteurs sommets (vecteur d'un cercle de rayon 1, l'autre un rayon de racine de 2...), sinon faudra utiliser le cosinus mais bof
+      ...
+    // Interpolation faded du point (x,y) (sur une base 0..1)
+      isx = ((6 * x - 15) * x + 10) * x * x * x
+      isy = ((6 * y - 15) * y + 10) * y * y * y
+    // Interpolation linéaire horizontale puis verticale des produits scalaires et du point faded
+      ilh1 = ps1 + isx * (ps2 - ps1)
+      ilh2 = ps3 + isx * (ps4 - ps3)
+      noise = ilh1 + isy * (ilh2 - ilh1)
+
+    //TODO : Faire des schémas parce que là c'est imbouffable, (tu seras content quand tu reviendras dessus dans deux ans hein... 👀)
 
     return noise;
   }
@@ -168,7 +204,7 @@ struct Map {
     (x_chunk, y_chunk) = Chunk::convert_position(x, y)
     chunk = chunks.try_get(x_chunk, y_chunk)
     if !(chunk exists) {
-      chunk = Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest)
+      chunk = Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed)
       chunk.end_init()
       chunks.add(chunk)
     }
@@ -188,8 +224,9 @@ struct Chunk {
   // ...
   random    // Random
 
-  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest) {
-    SEED = ukn_create_seed(x_chunk, y_chunk)
+  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed) {
+    SEED = ukn_sizeof(u32) / 1024
+          * permutation_table_seed[(permutation_table_seed[x_chunk & 1023] + y_chunk) & 1023]
     random = ukn_create_random(SEED)
 
     // ...
