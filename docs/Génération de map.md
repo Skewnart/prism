@@ -129,6 +129,74 @@ struct Chunk {
 } 
 ```
 
+### Chunk
+À chaque fois que l'utilisateur se déplace et lorsqu'un chunk non généré doit apparaître, il doit être généré de façon déterministe.<br/>
+Il aura donc attribué une seed en fonction de sa position.
+Ensuite, l'ordre de génération du chunk est déroulé.<br/>
+A ce moment-là, les deux fonctions d'init pour un chunk sont lancées.
+
+```
+struct Map {
+
+  // ...
+  
+  fn get(x, y) {
+    (x_chunk, y_chunk) = Chunk::convert_position(x, y)
+    chunk = chunks.try_get(x_chunk, y_chunk)
+    if !(chunk exists) {
+      chunk = Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed)
+      chunk.end_init()
+      chunks.add(chunk)
+    }
+    else {
+      if (chunk.state = State.Init) {
+        chunk.end_init()
+      }
+    }
+
+    return chunk.get(x, y)
+  }
+}
+```
+
+```
+struct Chunk {
+  // ...
+  random    // Random
+
+  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed) {
+    SEED = ukn_sizeof(u32) / 1024
+          * permutation_table_seed[(permutation_table_seed[x_chunk & 1023] + y_chunk) & 1023]
+    random = ukn_create_random(SEED)
+
+    // ...
+  }
+
+  fn end_init() {
+    load_state = State.EndInit
+
+    Poisson::solo_tree(random)
+    Poisson::solo_minerai(random)
+    foreach(x, y) :
+      WFC
+  }
+
+  fn get(x, y) {
+    return tiles[x, y]
+  }
+} 
+```
+
+## Utilisation des algorithmes
+
+### Perlin Noise
+
+Perlin noise va nous permettre de générer un terrain avec altitude ou un forêt avec un effet pseudo aléatoire mais cohérent (comme une image bruitée fluidement, utilisé dans le cinéma notamment pour des FX de nuages, de feu, et même les jeux vidéos pour de la génération de map, comme on va faire finalement)
+
+Perlin Noise en tant que tel possède des améliorations de l'algorithme, certaines seront utilisées (interpolation en fading, octaves, grande table de permutation)
+
+TODO : Faire des schémas
+
 ```
 struct Perlin {
   static VECTOR_TABLE : [...]  //table de concordance entre les entrées de la table de permutation avec un vecteur unique de norme 1 (tous les vecteurs formant un cercle exact), abrégé "VT"
@@ -187,62 +255,4 @@ struct Perlin {
     return noise;
   }
 }
-```
-
-### Chunk
-À chaque fois que l'utilisateur se déplace et lorsqu'un chunk non généré doit apparaître, il doit être généré de façon déterministe.<br/>
-Il aura donc attribué une seed en fonction de sa position.
-Ensuite, l'ordre de génération du chunk est déroulé.<br/>
-A ce moment-là, les deux fonctions d'init pour un chunk sont lancées.
-
-```
-struct Map {
-
-  // ...
-  
-  fn get(x, y) {
-    (x_chunk, y_chunk) = Chunk::convert_position(x, y)
-    chunk = chunks.try_get(x_chunk, y_chunk)
-    if !(chunk exists) {
-      chunk = Chunk::init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed)
-      chunk.end_init()
-      chunks.add(chunk)
-    }
-    else {
-      if (chunk.state = State.Init) {
-        chunk.end_init()
-      }
-    }
-
-    return chunk.get(x, y)
-  }
-}
-```
-
-```
-struct Chunk {
-  // ...
-  random    // Random
-
-  fn init(x_chunk, y_chunk, perlin_terrain, perlin_forest, permutation_table_seed) {
-    SEED = ukn_sizeof(u32) / 1024
-          * permutation_table_seed[(permutation_table_seed[x_chunk & 1023] + y_chunk) & 1023]
-    random = ukn_create_random(SEED)
-
-    // ...
-  }
-
-  fn end_init() {
-    load_state = State.EndInit
-
-    Poisson::solo_tree(random)
-    Poisson::solo_minerai(random)
-    foreach(x, y) :
-      WFC
-  }
-
-  fn get(x, y) {
-    return tiles[x, y]
-  }
-} 
 ```
